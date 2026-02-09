@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "TrafikskolaX Android PRD",
-    "slug": "trafikskolax-android-prd",
+    "name": "TFX APP",
+    "slug": "trafikskolax-tfx-prd",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -15,14 +15,14 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "app.rork.trafikskolax-android-prd"
+      "bundleIdentifier": "app.rork.tfx-prd"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "app.rork.trafikskolax_android_prd"
+      "package": "app.rork.tfx_prd"
     },
     "web": {
       "favicon": "./assets/images/favicon.png"
