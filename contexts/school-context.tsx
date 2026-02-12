@@ -31,7 +31,15 @@ async function fetchSchoolConfig(domain: string): Promise<SchoolConfig> {
     throw new Error(data.error || 'Invalid response from school API');
   }
 
-  return data.data;
+  // Merge top-level enabledFeatures array into the config
+  const config: SchoolConfig = data.data;
+  if (data.enabledFeatures && Array.isArray(data.enabledFeatures)) {
+    config.enabledFeatures = data.enabledFeatures;
+  }
+
+  console.log('[SchoolContext] Config received — logoUrl:', config.branding?.logoUrl || '(none)', 'theme.primary:', config.theme?.primaryColor || '(none)', 'enabledFeatures:', data.enabledFeatures || '(none)');
+
+  return config;
 }
 
 export const [SchoolProvider, useSchool] = createContextHook(() => {

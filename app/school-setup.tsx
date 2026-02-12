@@ -13,7 +13,7 @@ import {
   Dimensions,
   Animated,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { AlertCircle, QrCode, X, Globe, ChevronRight, Info } from 'lucide-react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useSchool } from '@/contexts/school-context';
@@ -27,8 +27,8 @@ import { fontFamily } from '@/constants/typography';
 import { BlurView } from 'expo-blur';
 
 const { width } = Dimensions.get('window');
-const LOGO_URL = { uri: 'https://r2-pub.rork.com/generated-images/84decd64-941d-4043-98e0-2e592fa65179.png' };
-const HEADER_BG_URL = { uri: 'https://r2-pub.rork.com/attachments/1v3jr1euro5i32gaenbvs' };
+const LOGO_URL = require('@/assets/images/tfx-logo.png');
+const HEADER_BG_URL = require('@/assets/images/header-bg.png');
 
 const LANGUAGES = [
   { code: 'sv', flag: '🇸🇪', label: 'Svenska' },
@@ -151,8 +151,11 @@ export default function SchoolSetupScreen() {
     try {
       const parsed = JSON.parse(data);
       if (parsed.type === 'school_config' && parsed.domain) {
-        setDomain(parsed.domain);
+        const scannedDomain = parsed.domain;
+        setDomain(scannedDomain);
         setShowQRScanner(false);
+        console.log('[SchoolSetup] QR valid, selecting school:', scannedDomain);
+        selectSchool(scannedDomain);
         setTimeout(() => setScanned(false), 1000);
       } else {
         throw new Error(t('common.error'));
@@ -370,38 +373,40 @@ export default function SchoolSetupScreen() {
         animationType="slide"
         onRequestClose={() => setShowQRScanner(false)}
       >
-        <View style={styles.qrModal}>
-          <SafeAreaView style={styles.qrSafeArea} edges={['top']}>
-            <View style={styles.qrHeader}>
-              <Text style={styles.qrTitle}>{t('schoolSetup.scanTitle')}</Text>
-              <TouchableOpacity
-                style={styles.closeButton}
-                onPress={() => setShowQRScanner(false)}
-                activeOpacity={0.7}
-              >
-                <X size={24} color="#fff" />
-              </TouchableOpacity>
-            </View>
-          </SafeAreaView>
-          <CameraView
-            style={styles.camera}
-            facing="back"
-            barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-            onBarcodeScanned={({ data }) => {
-              if (!scanned) handleQRScan(data);
-            }}
-          >
-            <View style={styles.scannerOverlay}>
-              <View style={styles.scanFrame}>
-                <View style={[styles.corner, styles.topLeft]} />
-                <View style={[styles.corner, styles.topRight]} />
-                <View style={[styles.corner, styles.bottomLeft]} />
-                <View style={[styles.corner, styles.bottomRight]} />
+        <SafeAreaProvider>
+          <View style={styles.qrModal}>
+            <SafeAreaView style={styles.qrSafeArea} edges={['top']}>
+              <View style={styles.qrHeader}>
+                <Text style={styles.qrTitle}>{t('schoolSetup.scanTitle')}</Text>
+                <TouchableOpacity
+                  style={styles.closeButton}
+                  onPress={() => setShowQRScanner(false)}
+                  activeOpacity={0.7}
+                >
+                  <X size={24} color="#fff" />
+                </TouchableOpacity>
               </View>
-              <Text style={styles.scanInstructions}>{t('schoolSetup.scanInstructions')}</Text>
-            </View>
-          </CameraView>
-        </View>
+            </SafeAreaView>
+            <CameraView
+              style={styles.camera}
+              facing="back"
+              barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+              onBarcodeScanned={({ data }) => {
+                if (!scanned) handleQRScan(data);
+              }}
+            >
+              <View style={styles.scannerOverlay}>
+                <View style={styles.scanFrame}>
+                  <View style={[styles.corner, styles.topLeft]} />
+                  <View style={[styles.corner, styles.topRight]} />
+                  <View style={[styles.corner, styles.bottomLeft]} />
+                  <View style={[styles.corner, styles.bottomRight]} />
+                </View>
+                <Text style={styles.scanInstructions}>{t('schoolSetup.scanInstructions')}</Text>
+              </View>
+            </CameraView>
+          </View>
+        </SafeAreaProvider>
       </Modal>
     </View>
   );

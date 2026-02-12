@@ -16,6 +16,8 @@ export interface SchoolBranding {
   splashImageUrl?: string;
   schoolName: string;
   tagline?: string;
+  /** Server-configured loader style for boot screen and loading states */
+  loaderType?: import('@/components/loaders/types').LoaderType;
 }
 
 export interface SchoolContact {
@@ -25,17 +27,44 @@ export interface SchoolContact {
   website?: string;
 }
 
+export interface SchoolFeatures {
+  enableQuiz?: boolean;
+  enableLessons?: boolean;
+  enableCertificates?: boolean;
+  enableKorklar?: boolean;
+  enableBookings?: boolean;
+  enableLms?: boolean;
+  enableInvoices?: boolean;
+  enableProfile?: boolean;
+  enableOfflineMode?: boolean;
+  // Alternative key names from some server versions
+  bookings?: boolean;
+  lms?: boolean;
+  invoices?: boolean;
+  profile?: boolean;
+  quiz?: boolean;
+  certificates?: boolean;
+  korklar?: boolean;
+  offlineMode?: boolean;
+}
+
 export interface SchoolConfig {
   domain: string;
   apiBaseUrl: string;
   theme: SchoolTheme;
   branding: SchoolBranding;
   contact?: SchoolContact;
-  features?: {
-    enableQuiz?: boolean;
-    enableLessons?: boolean;
-    enableCertificates?: boolean;
-    enableKorklar?: boolean;
+  features?: SchoolFeatures;
+  /** Top-level enabled features array from server (e.g. ["bookings","invoices","lms","profile"]) */
+  enabledFeatures?: string[];
+  /** Mobile app-specific config from admin dashboard */
+  mobileConfig?: {
+    appEnabled: boolean;
+    maintenanceMode: boolean;
+    minVersion: { ios: string; android: string };
+    latestVersion: { ios: string; android: string };
+    pushEnabled: boolean;
+    syncIntervalMinutes: number;
   };
 }
 

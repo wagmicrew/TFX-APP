@@ -3,9 +3,10 @@
     "name": "TFX APP",
     "slug": "trafikskolax-tfx-prd",
     "version": "1.0.0",
+    "owner": "johaswe",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "rork-app",
+    "scheme": "tfx-app",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
@@ -15,14 +16,14 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "app.rork.tfx-prd"
+      "bundleIdentifier": "com.tfx.app"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "app.rork.tfx_prd"
+      "package": "com.tfx.app"
     },
     "web": {
       "favicon": "./assets/images/favicon.png"
@@ -31,15 +32,31 @@
       [
         "expo-router",
         {
-          "origin": "https://rork.com/"
+          "origin": "https://tfx.app/"
         }
       ],
       "expo-font",
       "expo-web-browser",
-      "expo-localization"
+      "expo-localization",
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#1B8FCE"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "origin": "https://tfx.app/"
+      },
+      "eas": {
+        "projectId": "af35d6e8-3a3c-4b4e-a1c8-e1964ad8bdf7"
+      }
     }
   }
 }

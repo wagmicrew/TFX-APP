@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -10,20 +10,38 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { School, RefreshCw, ExternalLink, LogOut, Settings, ChevronRight, User } from 'lucide-react-native';
+import { School, RefreshCw, ExternalLink, LogOut, Settings, ChevronRight, User, Bell, Cloud } from 'lucide-react-native';
 import { useSchool } from '@/contexts/school-context';
 import { useAuth } from '@/contexts/auth-context';
+import { useAppConfig } from '@/contexts/app-config-context';
 import { router } from 'expo-router';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { TFX } from '@/constants/colors';
+import { useTheme } from '@/contexts/theme-context';
 import { fontFamily } from '@/constants/typography';
+import { getLastSyncTime, getPendingCount } from '@/services/sync-service';
+import { getPushPermissionStatus } from '@/services/push-service';
 
-const LOGO_URL = { uri: 'https://r2-pub.rork.com/generated-images/84decd64-941d-4043-98e0-2e592fa65179.png' };
+const FALLBACK_LOGO = require('@/assets/images/tfx-logo.png');
 
 export default function ProfileScreen() {
   const { config, clearSchool, refetch } = useSchool();
   const { user, logout } = useAuth();
+  const { colors, branding } = useTheme();
+  const { appVersion, settings: appSettings, updateAvailable, storeUrl } = useAppConfig();
+
+  const [lastSync, setLastSync] = useState<string | null>(null);
+  const [pendingOps, setPendingOps] = useState(0);
+  const [pushStatus, setPushStatus] = useState<string>('unknown');
+
+  useEffect(() => {
+    (async () => {
+      setLastSync(await getLastSyncTime());
+      setPendingOps(await getPendingCount());
+      setPushStatus(await getPushPermissionStatus());
+    })();
+  }, []);
 
   const handleChangeSchool = () => {
     Alert.alert(
@@ -74,7 +92,7 @@ export default function ProfileScreen() {
   return (
     <View style={styles.root}>
       <LinearGradient
-        colors={[TFX.blueDeep, TFX.navy]}
+        colors={[colors.primaryDeep, colors.navy]}
         style={styles.headerGradient}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
@@ -87,13 +105,17 @@ export default function ProfileScreen() {
         >
           <View style={styles.profileHeader}>
             <View style={styles.avatarCircle}>
-              <User size={36} color={TFX.blue} />
+              <User size={36} color={colors.primary} />
             </View>
             <Text style={styles.userName}>{user ? `${user.firstName} ${user.lastName}` : 'Student'}</Text>
             <Text style={styles.userEmail}>{user?.email || ''}</Text>
             {config && (
               <View style={styles.schoolBadge}>
-                <Image source={LOGO_URL} style={styles.badgeLogo} contentFit="contain" />
+                <Image
+                  source={branding.logo ? { uri: branding.logo } : FALLBACK_LOGO}
+                  style={styles.badgeLogo}
+                  contentFit="contain"
+                />
                 <Text style={styles.schoolBadgeText}>{config.branding.schoolName}</Text>
               </View>
             )}
@@ -113,7 +135,7 @@ export default function ProfileScreen() {
 
             <TouchableOpacity style={styles.menuItem} onPress={handleRefreshConfig} activeOpacity={0.7}>
               <View style={[styles.menuIcon, { backgroundColor: '#EFF6FF' }]}>
-                <RefreshCw size={20} color={TFX.blue} />
+                <RefreshCw size={20} color={colors.primary} />
               </View>
               <Text style={styles.menuTitle}>Uppdatera konfiguration</Text>
               <ChevronRight size={18} color={TFX.slate} />
@@ -121,7 +143,7 @@ export default function ProfileScreen() {
 
             <TouchableOpacity style={styles.menuItem} onPress={handleChangeSchool} activeOpacity={0.7}>
               <View style={[styles.menuIcon, { backgroundColor: '#FFF7ED' }]}>
-                <School size={20} color={TFX.orange} />
+                <School size={20} color={colors.secondary} />
               </View>
               <Text style={styles.menuTitle}>Byt skola</Text>
               <ChevronRight size={18} color={TFX.slate} />
@@ -129,7 +151,7 @@ export default function ProfileScreen() {
 
             <TouchableOpacity style={styles.menuItem} onPress={() => router.push('/settings')} activeOpacity={0.7}>
               <View style={[styles.menuIcon, { backgroundColor: '#F0FDF4' }]}>
-                <Settings size={20} color={TFX.green} />
+                <Settings size={20} color={colors.success} />
               </View>
               <Text style={styles.menuTitle}>Alla inställningar</Text>
               <ChevronRight size={18} color={TFX.slate} />
@@ -151,7 +173,35 @@ export default function ProfileScreen() {
               <ChevronRight size={18} color={TFX.danger} />
             </TouchableOpacity>
 
-            <Text style={styles.versionText}>TFX v1.0.0</Text>
+            <Text style={styles.versionText}>TFX v{appVersion}</Text>
+
+            {/* Quick status indicators */}
+            <View style={styles.statusIndicators}>
+              <View style={styles.statusChip}>
+                <Bell size={12} color={pushStatus === 'granted' ? TFX.green : TFX.slate} />
+                <Text style={styles.statusChipText}>
+                  Push: {pushStatus === 'granted' ? 'Aktivt' : 'Av'}
+                </Text>
+              </View>
+              {appSettings?.featureOfflineMode && (
+                <View style={styles.statusChip}>
+                  <Cloud size={12} color={pendingOps > 0 ? TFX.orange : TFX.green} />
+                  <Text style={styles.statusChipText}>
+                    {pendingOps > 0 ? `${pendingOps} väntar` : 'Synkad'}
+                  </Text>
+                </View>
+              )}
+              {updateAvailable && (
+                <TouchableOpacity
+                  style={[styles.statusChip, { backgroundColor: '#EFF6FF' }]}
+                  onPress={() => storeUrl && Linking.openURL(storeUrl)}
+                >
+                  <Text style={[styles.statusChipText, { color: TFX.blue }]}>
+                    📲 Uppdatera
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
         </ScrollView>
       </SafeAreaView>
@@ -306,5 +356,28 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: TFX.slate,
     marginTop: 24,
+  },
+  statusIndicators: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 10,
+    paddingBottom: 8,
+  },
+  statusChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: TFX.grayLight,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  statusChipText: {
+    fontSize: 11,
+    fontWeight: '500' as const,
+    fontFamily,
+    color: TFX.slate,
   },
 });

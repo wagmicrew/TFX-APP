@@ -1,10 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import * as Localization from 'expo-localization';
 import createContextHook from '@nkzw/create-context-hook';
 import { useQuery } from '@tanstack/react-query';
 import { useSchool } from './school-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { fetchAppTranslations } from '@/services/mobile-api';
+
+const I18N_ETAG_KEY = '@tfx_i18n_etag';
+const I18N_CACHE_KEY = '@tfx_i18n_cache';
 
 const fallbackTranslations = {
   en: {
@@ -155,14 +160,77 @@ const fallbackTranslations = {
     },
     lmsScreen: {
       title: 'Study Material',
+      dashboard: 'Dashboard',
+      myCourses: 'My Courses',
+      allCourses: 'All Courses',
       chapters: 'Chapters',
+      lessons: 'Lessons',
       quizzes: 'Quizzes',
       progress: 'Progress',
+      overallProgress: 'Overall Progress',
       startQuiz: 'Start Quiz',
+      retakeQuiz: 'Retake Quiz',
       continueReading: 'Continue Reading',
+      startLesson: 'Start Lesson',
       completed: 'Completed',
       notStarted: 'Not Started',
       inProgress: 'In Progress',
+      courseProgress: '{{progress}}% completed',
+      chaptersCount: '{{count}} chapters',
+      lessonsCount: '{{count}} lessons',
+      quizzesCount: '{{count}} quizzes',
+      estimatedTime: '~{{minutes}} min',
+      noCourses: 'No courses available',
+      noCoursesDesc: 'Your school has not published any courses for the app yet.',
+      continueWhere: 'Continue where you left off',
+      recentActivity: 'Recent Activity',
+      viewAll: 'View All',
+      courseDetails: 'Course Details',
+      chapterOf: 'Chapter {{current}} of {{total}}',
+      lessonContent: 'Lesson Content',
+      nextLesson: 'Next Lesson',
+      prevLesson: 'Previous Lesson',
+      markComplete: 'Mark as Complete',
+      alreadyCompleted: 'Already Completed',
+      lessonCompleted: 'Lesson completed!',
+      backToCourse: 'Back to Course',
+      backToCourses: 'Back to Courses',
+    },
+    quizScreen: {
+      title: 'Quiz',
+      question: 'Question',
+      questionOf: 'Question {{current}} of {{total}}',
+      selectAnswer: 'Select an answer',
+      selectAnswers: 'Select all correct answers',
+      trueOrFalse: 'True or False?',
+      next: 'Next',
+      previous: 'Previous',
+      submit: 'Submit Quiz',
+      submitConfirm: 'Are you sure you want to submit?',
+      submitConfirmDesc: 'You have answered {{answered}} of {{total}} questions.',
+      timeRemaining: 'Time remaining',
+      timeUp: 'Time is up!',
+      results: 'Quiz Results',
+      score: 'Score',
+      passed: 'Passed!',
+      failed: 'Not passed',
+      passedDesc: 'Congratulations! You passed the quiz.',
+      failedDesc: 'You did not reach the passing score. Try again!',
+      correctAnswers: '{{count}} correct',
+      wrongAnswers: '{{count}} wrong',
+      passingScore: 'Passing score: {{score}}%',
+      yourScore: 'Your score: {{score}}%',
+      reviewAnswers: 'Review Answers',
+      correct: 'Correct',
+      wrong: 'Wrong',
+      explanation: 'Explanation',
+      tryAgain: 'Try Again',
+      backToCourse: 'Back to Course',
+      attempts: '{{count}} attempts',
+      bestScore: 'Best: {{score}}%',
+      unanswered: '{{count}} unanswered',
+      exitConfirm: 'Exit Quiz?',
+      exitConfirmDesc: 'Your progress will be lost if you exit now.',
     },
     studentDetails: {
       title: 'My Details',
@@ -324,14 +392,77 @@ const fallbackTranslations = {
     },
     lmsScreen: {
       title: 'Studiematerial',
+      dashboard: 'Översikt',
+      myCourses: 'Mina kurser',
+      allCourses: 'Alla kurser',
       chapters: 'Kapitel',
+      lessons: 'Lektioner',
       quizzes: 'Quiz',
       progress: 'Framsteg',
+      overallProgress: 'Totalt framsteg',
       startQuiz: 'Starta quiz',
-      continueReading: 'Forts\u00e4tt l\u00e4sa',
+      retakeQuiz: 'Gör om quiz',
+      continueReading: 'Fortsätt läsa',
+      startLesson: 'Starta lektion',
       completed: 'Avklarad',
-      notStarted: 'Ej p\u00e5b\u00f6rjad',
-      inProgress: 'P\u00e5g\u00e5ende',
+      notStarted: 'Ej påbörjad',
+      inProgress: 'Pågående',
+      courseProgress: '{{progress}}% avklarat',
+      chaptersCount: '{{count}} kapitel',
+      lessonsCount: '{{count}} lektioner',
+      quizzesCount: '{{count}} quiz',
+      estimatedTime: '~{{minutes}} min',
+      noCourses: 'Inga kurser tillgängliga',
+      noCoursesDesc: 'Din skola har inte publicerat några kurser för appen ännu.',
+      continueWhere: 'Fortsätt där du slutade',
+      recentActivity: 'Senaste aktivitet',
+      viewAll: 'Visa alla',
+      courseDetails: 'Kursdetaljer',
+      chapterOf: 'Kapitel {{current}} av {{total}}',
+      lessonContent: 'Lektionsinnehåll',
+      nextLesson: 'Nästa lektion',
+      prevLesson: 'Föregående lektion',
+      markComplete: 'Markera som klar',
+      alreadyCompleted: 'Redan avklarad',
+      lessonCompleted: 'Lektion avklarad!',
+      backToCourse: 'Tillbaka till kurs',
+      backToCourses: 'Tillbaka till kurser',
+    },
+    quizScreen: {
+      title: 'Quiz',
+      question: 'Fråga',
+      questionOf: 'Fråga {{current}} av {{total}}',
+      selectAnswer: 'Välj ett svar',
+      selectAnswers: 'Välj alla korrekta svar',
+      trueOrFalse: 'Sant eller falskt?',
+      next: 'Nästa',
+      previous: 'Föregående',
+      submit: 'Skicka in quiz',
+      submitConfirm: 'Är du säker på att du vill skicka in?',
+      submitConfirmDesc: 'Du har svarat på {{answered}} av {{total}} frågor.',
+      timeRemaining: 'Tid kvar',
+      timeUp: 'Tiden är slut!',
+      results: 'Quizresultat',
+      score: 'Poäng',
+      passed: 'Godkänd!',
+      failed: 'Ej godkänd',
+      passedDesc: 'Grattis! Du klarade quizet.',
+      failedDesc: 'Du nådde inte godkäntgränsen. Försök igen!',
+      correctAnswers: '{{count}} rätt',
+      wrongAnswers: '{{count}} fel',
+      passingScore: 'Godkäntgräns: {{score}}%',
+      yourScore: 'Ditt resultat: {{score}}%',
+      reviewAnswers: 'Granska svar',
+      correct: 'Rätt',
+      wrong: 'Fel',
+      explanation: 'Förklaring',
+      tryAgain: 'Försök igen',
+      backToCourse: 'Tillbaka till kurs',
+      attempts: '{{count}} försök',
+      bestScore: 'Bäst: {{score}}%',
+      unanswered: '{{count}} obesvarade',
+      exitConfirm: 'Avsluta quiz?',
+      exitConfirmDesc: 'Dina framsteg går förlorade om du avslutar nu.',
     },
     studentDetails: {
       title: 'Mina uppgifter',
@@ -350,6 +481,34 @@ const fallbackTranslations = {
 async function fetchTranslations(apiBaseUrl: string, locale: string) {
   try {
     console.log(`[i18n] Fetching translations for locale: ${locale}`);
+
+    // Try mobile i18n endpoint with ETag caching first
+    const storedETag = await AsyncStorage.getItem(I18N_ETAG_KEY);
+    const result = await fetchAppTranslations(apiBaseUrl, locale, storedETag ?? undefined);
+
+    if (result.notModified) {
+      console.log('[i18n] Translations not modified (304), using cache');
+      const cached = await AsyncStorage.getItem(I18N_CACHE_KEY);
+      if (cached) {
+        try {
+          return JSON.parse(cached);
+        } catch {
+          // Fall through to legacy endpoint
+        }
+      }
+    }
+
+    if (result.success && result.data?.translations) {
+      // Cache the translations and ETag
+      await AsyncStorage.setItem(I18N_CACHE_KEY, JSON.stringify(result.data.translations));
+      if (result.etag) {
+        await AsyncStorage.setItem(I18N_ETAG_KEY, result.etag);
+      }
+      console.log('[i18n] Translations fetched and cached via mobile API');
+      return result.data.translations;
+    }
+
+    // Fallback: try legacy endpoint
     const response = await fetch(`${apiBaseUrl}/translations/${locale}`, {
       method: 'GET',
       headers: {
@@ -369,6 +528,11 @@ async function fetchTranslations(apiBaseUrl: string, locale: string) {
     return null;
   } catch (error) {
     console.warn('[i18n] Failed to fetch server translations, using fallback:', error);
+    // Try loading from cache as last resort
+    try {
+      const cached = await AsyncStorage.getItem(I18N_CACHE_KEY);
+      if (cached) return JSON.parse(cached);
+    } catch {}
     return null;
   }
 }

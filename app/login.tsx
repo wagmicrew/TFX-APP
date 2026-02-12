@@ -13,7 +13,7 @@ import {
   Dimensions,
   Animated,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { Mail, AlertCircle, QrCode, X, Check, ChevronRight, Settings } from 'lucide-react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useAuth } from '@/contexts/auth-context';
@@ -24,19 +24,23 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { TFX } from '@/constants/colors';
+import { useTheme } from '@/contexts/theme-context';
 import { fontFamily } from '@/constants/typography';
 
 const { width } = Dimensions.get('window');
-const LOGO_URL = { uri: 'https://r2-pub.rork.com/generated-images/84decd64-941d-4043-98e0-2e592fa65179.png' };
-const HEADER_BG_URL = { uri: 'https://r2-pub.rork.com/attachments/1v3jr1euro5i32gaenbvs' };
+const FALLBACK_LOGO = require('@/assets/images/tfx-logo.png');
+const HEADER_BG_URL = require('@/assets/images/header-bg.png');
 
 export default function LoginScreen() {
-  const { requestOTP, verifyOTP, quickLogin, requestOTPLoading, verifyOTPLoading, quickLoginLoading, requestOTPError, verifyOTPError, isAuthenticated } = useAuth();
+  const { requestOTP, verifyOTP, quickLogin, loginWithPassword, requestOTPLoading, verifyOTPLoading, quickLoginLoading, loginWithPasswordLoading, requestOTPError, verifyOTPError, loginWithPasswordError, isAuthenticated } = useAuth();
   const { t } = useTranslation();
   const { config, clearSchool } = useSchool();
+  const { colors, branding } = useTheme();
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [otpCode, setOtpCode] = useState<string[]>(['', '', '', '', '', '']);
   const [step, setStep] = useState<'email' | 'otp'>('email');
+  const [authMode, setAuthMode] = useState<'otp' | 'password'>('otp');
   const [showQRScanner, setShowQRScanner] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
@@ -98,6 +102,9 @@ export default function LoginScreen() {
         setResendTimer(60);
         setTimeout(() => otpRefs.current[0]?.focus(), 100);
       },
+      onError: (err) => {
+        console.error('[Login] OTP request failed:', err);
+      },
     });
   };
 
@@ -131,10 +138,15 @@ export default function LoginScreen() {
     console.log('[Login] QR scanned:', data);
     setScanned(true);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    // Close the scanner immediately so it doesn't block navigation
+    setShowQRScanner(false);
     quickLogin(data, {
-      onSuccess: () => setShowQRScanner(false),
+      onSuccess: () => {
+        console.log('[Login] Quick login succeeded, navigating to tabs');
+        // Explicit redirect — don't rely solely on the isAuthenticated effect
+        router.replace('/(tabs)');
+      },
       onError: () => {
-        setShowQRScanner(false);
         setTimeout(() => setScanned(false), 1000);
       },
     });
@@ -202,7 +214,11 @@ export default function LoginScreen() {
             <View style={styles.header}>
               <View style={styles.logoRow}>
                 <View style={styles.logoWrapper}>
-                  <Image source={LOGO_URL} style={styles.logo} contentFit="contain" />
+                  <Image
+                    source={branding.logo ? { uri: branding.logo } : FALLBACK_LOGO}
+                    style={styles.logo}
+                    contentFit="contain"
+                  />
                 </View>
                 <Text style={styles.welcomeSchool}>{schoolName}</Text>
               </View>
@@ -216,7 +232,7 @@ export default function LoginScreen() {
 
                   <TouchableOpacity style={styles.qrButton} onPress={openQRScanner} activeOpacity={0.85}>
                     <LinearGradient
-                      colors={[TFX.teal, TFX.tealDark]}
+                      colors={[colors.accent, colors.primaryDark]}
                       style={styles.qrButtonGradient}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 0 }}
@@ -231,6 +247,26 @@ export default function LoginScreen() {
                     <View style={styles.dividerLine} />
                     <Text style={styles.dividerText}>ELLER</Text>
                     <View style={styles.dividerLine} />
+                  </View>
+
+                  {/* Auth Mode Toggle */}
+                  <View style={styles.authModeRow}>
+                    <TouchableOpacity
+                      style={[styles.authModeTab, authMode === 'otp' && styles.authModeTabActive]}
+                      onPress={() => setAuthMode('otp')}
+                    >
+                      <Text style={[styles.authModeText, authMode === 'otp' && styles.authModeTextActive]}>
+                        Engångskod
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.authModeTab, authMode === 'password' && styles.authModeTabActive]}
+                      onPress={() => setAuthMode('password')}
+                    >
+                      <Text style={[styles.authModeText, authMode === 'password' && styles.authModeTextActive]}>
+                        Lösenord
+                      </Text>
+                    </TouchableOpacity>
                   </View>
 
                   <Text style={styles.label}>{t('login.emailLabel')}</Text>
@@ -258,22 +294,57 @@ export default function LoginScreen() {
                     </View>
                   )}
 
+                  {authMode === 'password' && (
+                    <>
+                      <Text style={styles.label}>Lösenord</Text>
+                      <View style={[styles.inputWrapper, loginWithPasswordError && styles.inputWrapperError]}>
+                        <TextInput
+                          style={styles.input}
+                          value={password}
+                          onChangeText={setPassword}
+                          placeholder="Ange ditt lösenord"
+                          placeholderTextColor="#94A3B8"
+                          secureTextEntry
+                          editable={!loginWithPasswordLoading}
+                        />
+                      </View>
+                      {loginWithPasswordError && (
+                        <View style={styles.errorContainer}>
+                          <AlertCircle size={16} color={TFX.danger} />
+                          <Text style={styles.errorText}>
+                            {loginWithPasswordError instanceof Error ? loginWithPasswordError.message : 'Fel e-post eller lösenord'}
+                          </Text>
+                        </View>
+                      )}
+                    </>
+                  )}
+
                   <TouchableOpacity
-                    style={[styles.primaryButton, (!email || requestOTPLoading) && styles.primaryButtonDisabled]}
-                    onPress={handleRequestOTP}
-                    disabled={!email || requestOTPLoading}
+                    style={[styles.primaryButton, ((!email || (authMode === 'otp' && requestOTPLoading) || (authMode === 'password' && (!password || loginWithPasswordLoading))) && styles.primaryButtonDisabled)]}
+                    onPress={() => {
+                      if (authMode === 'password') {
+                        if (!email || !password) return;
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                        loginWithPassword({ email, password });
+                      } else {
+                        handleRequestOTP();
+                      }
+                    }}
+                    disabled={!email || (authMode === 'otp' && requestOTPLoading) || (authMode === 'password' && (!password || loginWithPasswordLoading))}
                     activeOpacity={0.85}
                   >
                     <LinearGradient
-                      colors={[TFX.blue, TFX.blueDark]}
+                      colors={[colors.primary, colors.primaryDark]}
                       style={styles.primaryButtonGradient}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 0 }}
                     >
-                      {requestOTPLoading ? (
+                      {(authMode === 'otp' ? requestOTPLoading : loginWithPasswordLoading) ? (
                         <ActivityIndicator color="#fff" />
                       ) : (
-                        <Text style={styles.primaryButtonText}>{t('login.sendOTP')}</Text>
+                        <Text style={styles.primaryButtonText}>
+                          {authMode === 'password' ? 'Logga in' : t('login.sendOTP')}
+                        </Text>
                       )}
                     </LinearGradient>
                   </TouchableOpacity>
@@ -334,7 +405,7 @@ export default function LoginScreen() {
 
                   {verifyOTPLoading && (
                     <View style={styles.loadingOverlay}>
-                      <ActivityIndicator size="large" color={TFX.blue} />
+                      <ActivityIndicator size="large" color={colors.primary} />
                       <Text style={styles.loadingText}>{t('login.verifying')}</Text>
                     </View>
                   )}
@@ -346,40 +417,48 @@ export default function LoginScreen() {
       </SafeAreaView>
 
       <Modal visible={showQRScanner} animationType="slide" onRequestClose={() => setShowQRScanner(false)}>
-        <View style={styles.qrModal}>
-          <SafeAreaView style={styles.qrSafeArea} edges={['top']}>
-            <View style={styles.qrHeader}>
-              <Text style={styles.qrTitle}>{t('login.quickLogin')}</Text>
-              <TouchableOpacity style={styles.closeButton} onPress={() => setShowQRScanner(false)} activeOpacity={0.7}>
-                <X size={24} color="#fff" />
-              </TouchableOpacity>
-            </View>
-          </SafeAreaView>
-          <CameraView
-            style={styles.camera}
-            facing="back"
-            barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-            onBarcodeScanned={({ data }) => { if (!scanned) handleQRScan(data); }}
-          >
-            <View style={styles.scannerOverlay}>
-              <View style={styles.scanFrame}>
-                <View style={[styles.corner, styles.topLeft]} />
-                <View style={[styles.corner, styles.topRight]} />
-                <View style={[styles.corner, styles.bottomLeft]} />
-                <View style={[styles.corner, styles.bottomRight]} />
+        <SafeAreaProvider>
+          <View style={styles.qrModal}>
+            <SafeAreaView style={styles.qrSafeArea} edges={['top', 'bottom']}>
+              <View style={styles.qrHeader}>
+                <Text style={styles.qrTitle}>{t('login.quickLogin')}</Text>
+                <TouchableOpacity style={styles.closeButton} onPress={() => setShowQRScanner(false)} activeOpacity={0.7}>
+                  <X size={24} color="#fff" />
+                </TouchableOpacity>
               </View>
-              <Text style={styles.scanInstructions}>{t('login.scanInstructions')}</Text>
-            </View>
-          </CameraView>
-          {quickLoginLoading && (
-            <View style={styles.scanLoadingOverlay}>
-              <View style={styles.scanLoadingBox}>
-                <Check size={48} color={TFX.green} strokeWidth={3} />
-                <Text style={styles.scanLoadingText}>{t('login.loggingIn')}</Text>
+              <CameraView
+                style={styles.camera}
+                facing="back"
+                barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+                onBarcodeScanned={({ data }) => { if (!scanned) handleQRScan(data); }}
+              >
+                <View style={styles.scannerOverlay}>
+                  <View style={styles.scanFrame}>
+                    <View style={[styles.corner, styles.topLeft]} />
+                    <View style={[styles.corner, styles.topRight]} />
+                    <View style={[styles.corner, styles.bottomLeft]} />
+                    <View style={[styles.corner, styles.bottomRight]} />
+                  </View>
+                  <Text style={styles.scanInstructions}>{t('login.scanInstructions')}</Text>
+                </View>
+              </CameraView>
+              <View style={styles.qrBottomBar}>
+                <TouchableOpacity style={styles.qrCloseBottomButton} onPress={() => setShowQRScanner(false)} activeOpacity={0.85}>
+                  <X size={20} color="#fff" />
+                  <Text style={styles.qrCloseBottomText}>Stäng</Text>
+                </TouchableOpacity>
               </View>
-            </View>
-          )}
-        </View>
+            </SafeAreaView>
+            {quickLoginLoading && (
+              <View style={styles.scanLoadingOverlay}>
+                <View style={styles.scanLoadingBox}>
+                  <Check size={48} color={TFX.green} strokeWidth={3} />
+                  <Text style={styles.scanLoadingText}>{t('login.loggingIn')}</Text>
+                </View>
+              </View>
+            )}
+          </View>
+        </SafeAreaProvider>
       </Modal>
     </View>
   );
@@ -522,6 +601,36 @@ const styles = StyleSheet.create({
     color: TFX.slate,
     letterSpacing: 1,
   },
+  authModeRow: {
+    flexDirection: 'row',
+    backgroundColor: TFX.grayLight,
+    borderRadius: 10,
+    padding: 3,
+    marginBottom: 20,
+  },
+  authModeTab: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderRadius: 8,
+  },
+  authModeTabActive: {
+    backgroundColor: TFX.white,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  authModeText: {
+    fontSize: 14,
+    fontWeight: '600' as const,
+    fontFamily,
+    color: TFX.slate,
+  },
+  authModeTextActive: {
+    color: TFX.navy,
+  },
   label: {
     fontSize: 14,
     fontWeight: '600' as const,
@@ -656,6 +765,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#000',
   },
   qrSafeArea: {
+    flex: 1,
     zIndex: 10,
   },
   qrHeader: {
@@ -673,10 +783,35 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   closeButton: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+  },
+  qrBottomBar: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    alignItems: 'center',
+  },
+  qrCloseBottomButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    borderRadius: 14,
+    width: '100%',
+  },
+  qrCloseBottomText: {
+    fontSize: 16,
+    fontWeight: '600' as const,
+    fontFamily,
+    color: '#fff',
   },
   camera: {
     flex: 1,

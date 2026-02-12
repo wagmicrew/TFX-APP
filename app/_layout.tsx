@@ -6,11 +6,19 @@ import React, { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SchoolProvider, useSchool } from "@/contexts/school-context";
 import { AuthProvider, useAuth } from "@/contexts/auth-context";
+import { AppConfigProvider, useAppConfig } from "@/contexts/app-config-context";
 import { I18nProvider } from "@/contexts/i18n-context";
-import { View, ActivityIndicator, StyleSheet, Animated, Dimensions, Platform } from "react-native";
+import { ThemeProvider } from "@/contexts/theme-context";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { OfflineBanner } from "@/components/OfflineBanner";
+import { View, Text, StyleSheet, Animated, Dimensions, Platform, TouchableOpacity, Linking } from "react-native";
 import { Image } from 'expo-image';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { fontFamily } from '@/constants/typography';
+import { TFX } from '@/constants/colors';
+import { useAutoSync } from '@/hooks/useAutoSync';
+import { useNotificationPoller } from '@/hooks/useNotificationPoller';
+import { AppLoader } from '@/components/loaders';
 
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
@@ -20,19 +28,32 @@ const queryClient = new QueryClient();
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
+const BOOT_STEPS = [
+  'Startar TFX...',
+  'Laddar konfiguration...',
+  'Ansluter till servern...',
+  'Nästan klar...',
+];
+
 function BootScreen() {
   const logoScale = React.useRef(new Animated.Value(0.7)).current;
   const logoOpacity = React.useRef(new Animated.Value(0)).current;
   const textOpacity = React.useRef(new Animated.Value(0)).current;
   const textSlide = React.useRef(new Animated.Value(20)).current;
-  const shimmerOpacity = React.useRef(new Animated.Value(0)).current;
+  const loaderOpacity = React.useRef(new Animated.Value(0)).current;
   const pulseAnim = React.useRef(new Animated.Value(1)).current;
   const bgScale = React.useRef(new Animated.Value(1)).current;
   const bgTranslateX = React.useRef(new Animated.Value(0)).current;
   const bgTranslateY = React.useRef(new Animated.Value(0)).current;
+  const statusOpacity = React.useRef(new Animated.Value(0)).current;
+  const dotOpacity1 = React.useRef(new Animated.Value(0.3)).current;
+  const dotOpacity2 = React.useRef(new Animated.Value(0.3)).current;
+  const dotOpacity3 = React.useRef(new Animated.Value(0.3)).current;
+  const [statusIndex, setStatusIndex] = React.useState(0);
   const insets = useSafeAreaInsets();
 
   React.useEffect(() => {
+    // Logo + text entrance
     Animated.sequence([
       Animated.parallel([
         Animated.spring(logoScale, { toValue: 1, tension: 60, friction: 8, useNativeDriver: true }),
@@ -42,9 +63,13 @@ function BootScreen() {
         Animated.timing(textOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
         Animated.timing(textSlide, { toValue: 0, duration: 400, useNativeDriver: true }),
       ]),
-      Animated.timing(shimmerOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
+      Animated.parallel([
+        Animated.timing(loaderOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
+        Animated.timing(statusOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
+      ]),
     ]).start();
 
+    // Logo pulse
     Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, { toValue: 1.08, duration: 1200, useNativeDriver: true }),
@@ -52,6 +77,27 @@ function BootScreen() {
       ])
     ).start();
 
+    // Dot wave animation
+    Animated.loop(
+      Animated.sequence([
+        Animated.stagger(200, [
+          Animated.sequence([
+            Animated.timing(dotOpacity1, { toValue: 1, duration: 300, useNativeDriver: true }),
+            Animated.timing(dotOpacity1, { toValue: 0.3, duration: 300, useNativeDriver: true }),
+          ]),
+          Animated.sequence([
+            Animated.timing(dotOpacity2, { toValue: 1, duration: 300, useNativeDriver: true }),
+            Animated.timing(dotOpacity2, { toValue: 0.3, duration: 300, useNativeDriver: true }),
+          ]),
+          Animated.sequence([
+            Animated.timing(dotOpacity3, { toValue: 1, duration: 300, useNativeDriver: true }),
+            Animated.timing(dotOpacity3, { toValue: 0.3, duration: 300, useNativeDriver: true }),
+          ]),
+        ]),
+      ])
+    ).start();
+
+    // Background ken-burns
     Animated.loop(
       Animated.sequence([
         Animated.parallel([
@@ -71,6 +117,16 @@ function BootScreen() {
         ]),
       ])
     ).start();
+
+    // Rotate through status messages
+    const statusInterval = setInterval(() => {
+      setStatusIndex((prev) => {
+        if (prev < BOOT_STEPS.length - 1) return prev + 1;
+        return prev;
+      });
+    }, 1200);
+
+    return () => clearInterval(statusInterval);
   }, []);
 
   return (
@@ -83,7 +139,7 @@ function BootScreen() {
         ],
       }]}>
         <Image
-          source={{ uri: 'https://r2-pub.rork.com/attachments/4hayzjd0epoq06hgrtw84' }}
+          source={require('@/assets/images/boot-bg.png')}
           style={bootStyles.bgImage}
           contentFit="cover"
         />
@@ -98,7 +154,7 @@ function BootScreen() {
             <View style={bootStyles.logoGlow} />
             <View style={bootStyles.logoBox}>
               <Image
-                source={{ uri: 'https://r2-pub.rork.com/generated-images/84decd64-941d-4043-98e0-2e592fa65179.png' }}
+                source={require('@/assets/images/tfx-logo.png')}
                 style={bootStyles.logo}
                 contentFit="contain"
               />
@@ -114,10 +170,70 @@ function BootScreen() {
           <Animated.Text style={bootStyles.tagline}>TrafikskolaX</Animated.Text>
         </Animated.View>
 
-        <Animated.View style={[bootStyles.loaderArea, { opacity: shimmerOpacity }]}>
-          <ActivityIndicator size="small" color="rgba(255,255,255,0.9)" />
+        <Animated.View style={[bootStyles.loaderArea, { opacity: loaderOpacity }]}>
+          {/* Server-configurable loader — reads type from school config, falls back to spinner */}
+          <AppLoader size="medium" statusText={BOOT_STEPS[statusIndex]} />
+
+          {/* Animated dots below status text */}
+          <Animated.View style={[bootStyles.statusRow, { opacity: statusOpacity }]}>
+            <View style={bootStyles.dotsRow}>
+              <Animated.Text style={[bootStyles.dot, { opacity: dotOpacity1 }]}>●</Animated.Text>
+              <Animated.Text style={[bootStyles.dot, { opacity: dotOpacity2 }]}>●</Animated.Text>
+              <Animated.Text style={[bootStyles.dot, { opacity: dotOpacity3 }]}>●</Animated.Text>
+            </View>
+          </Animated.View>
         </Animated.View>
       </View>
+    </View>
+  );
+}
+
+/** Maintenance mode gate screen */
+function MaintenanceScreen() {
+  return (
+    <View style={gateStyles.container}>
+      <Text style={gateStyles.emoji}>🔧</Text>
+      <Text style={gateStyles.title}>Underhåll pågår</Text>
+      <Text style={gateStyles.message}>
+        Appen är tillfälligt otillgänglig för underhåll. Vänligen försök igen senare.
+      </Text>
+    </View>
+  );
+}
+
+/** Force update gate screen */
+function ForceUpdateScreen({ storeUrl }: { storeUrl?: string }) {
+  const handleUpdate = () => {
+    if (storeUrl) {
+      Linking.openURL(storeUrl);
+    }
+  };
+
+  return (
+    <View style={gateStyles.container}>
+      <Text style={gateStyles.emoji}>📲</Text>
+      <Text style={gateStyles.title}>Uppdatering krävs</Text>
+      <Text style={gateStyles.message}>
+        En ny version av appen finns tillgänglig. Du måste uppdatera för att fortsätta.
+      </Text>
+      {storeUrl ? (
+        <TouchableOpacity style={gateStyles.button} onPress={handleUpdate}>
+          <Text style={gateStyles.buttonText}>Uppdatera nu</Text>
+        </TouchableOpacity>
+      ) : null}
+    </View>
+  );
+}
+
+/** App disabled gate screen */
+function AppDisabledScreen() {
+  return (
+    <View style={gateStyles.container}>
+      <Text style={gateStyles.emoji}>📵</Text>
+      <Text style={gateStyles.title}>Appen är inte aktiv</Text>
+      <Text style={gateStyles.message}>
+        Mobilappen är för närvarande inte aktiverad. Kontakta din trafikskola för mer information.
+      </Text>
     </View>
   );
 }
@@ -125,8 +241,22 @@ function BootScreen() {
 function RootLayoutNav() {
   const { isConfigured, isLoading: schoolLoading } = useSchool();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const {
+    settings: appSettings,
+    isLoading: configLoading,
+    isAppEnabled,
+    isMaintenanceMode,
+    requiresUpdate,
+    storeUrl,
+  } = useAppConfig();
   const segments = useSegments();
   const router = useRouter();
+
+  // Start auto-sync when authenticated + offline mode enabled
+  useAutoSync();
+
+  // Poll for notifications (handles kick detection + unread count)
+  const { unreadCount } = useNotificationPoller();
 
   useEffect(() => {
     if (schoolLoading || authLoading) {
@@ -150,8 +280,23 @@ function RootLayoutNav() {
     }
   }, [isConfigured, isAuthenticated, schoolLoading, authLoading, segments]);
 
-  if (schoolLoading || authLoading) {
+  if (schoolLoading || authLoading || configLoading) {
     return <BootScreen />;
+  }
+
+  // Gate: Force update required
+  if (isConfigured && requiresUpdate) {
+    return <ForceUpdateScreen storeUrl={storeUrl} />;
+  }
+
+  // Gate: Maintenance mode
+  if (isConfigured && isMaintenanceMode) {
+    return <MaintenanceScreen />;
+  }
+
+  // Gate: App disabled by admin
+  if (isConfigured && appSettings && !isAppEnabled) {
+    return <AppDisabledScreen />;
   }
 
   return (
@@ -159,8 +304,13 @@ function RootLayoutNav() {
       <Stack.Screen name="school-setup" options={{ headerShown: false }} />
       <Stack.Screen name="login" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="lms" options={{ headerShown: false }} />
       <Stack.Screen name="settings" options={{ title: "Settings" }} />
       <Stack.Screen name="book-lesson" options={{ headerShown: false, presentation: "card" }} />
+      <Stack.Screen name="invoice-detail" options={{ headerShown: false }} />
+      <Stack.Screen name="notifications" options={{ headerShown: false }} />
+      <Stack.Screen name="booking-detail" options={{ headerShown: false }} />
+      <Stack.Screen name="student-profile" options={{ headerShown: false }} />
     </Stack>
   );
 }
@@ -188,17 +338,26 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <SchoolProvider>
-        <I18nProvider>
-          <AuthProvider>
-            <GestureHandlerRootView>
-              <RootLayoutNav />
-            </GestureHandlerRootView>
-          </AuthProvider>
-        </I18nProvider>
-      </SchoolProvider>
-    </QueryClientProvider>
+    <SafeAreaProvider>
+      <QueryClientProvider client={queryClient}>
+        <SchoolProvider>
+          <I18nProvider>
+            <AppConfigProvider>
+              <AuthProvider>
+                <ThemeProvider>
+                  <ErrorBoundary>
+                    <GestureHandlerRootView>
+                      <OfflineBanner />
+                      <RootLayoutNav />
+                    </GestureHandlerRootView>
+                  </ErrorBoundary>
+                </ThemeProvider>
+              </AuthProvider>
+            </AppConfigProvider>
+          </I18nProvider>
+        </SchoolProvider>
+      </QueryClientProvider>
+    </SafeAreaProvider>
   );
 }
 
@@ -284,5 +443,65 @@ const bootStyles = StyleSheet.create({
   loaderArea: {
     position: 'absolute' as const,
     bottom: Platform.OS === 'web' ? 60 : 80,
+    alignItems: 'center',
+    width: '100%',
+    paddingHorizontal: 40,
+  },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 8,
+  },
+  dotsRow: {
+    flexDirection: 'row',
+    gap: 3,
+    marginLeft: 2,
+  },
+  dot: {
+    fontSize: 6,
+    color: 'rgba(255,255,255,0.7)',
+  },
+});
+
+const gateStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: TFX.grayLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+  emoji: {
+    fontSize: 64,
+    marginBottom: 24,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: '700' as const,
+    fontFamily,
+    color: TFX.navy,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  message: {
+    fontSize: 15,
+    color: TFX.slate,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 24,
+  },
+  button: {
+    backgroundColor: TFX.blue,
+    paddingHorizontal: 32,
+    paddingVertical: 14,
+    borderRadius: 12,
+  },
+  buttonText: {
+    color: TFX.white,
+    fontSize: 16,
+    fontWeight: '600' as const,
+    fontFamily,
   },
 });

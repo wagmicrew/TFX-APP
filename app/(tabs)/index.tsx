@@ -1,6 +1,7 @@
 import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Animated, Dimensions } from "react-native";
 import { useSchool } from "@/contexts/school-context";
 import { useAuth } from "@/contexts/auth-context";
+import { useAppConfig } from "@/contexts/app-config-context";
 import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -18,11 +19,13 @@ import {
 import { useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { TFX } from "@/constants/colors";
+import { useTheme } from "@/contexts/theme-context";
 import { fontFamily } from "@/constants/typography";
+import { APP_SECRET } from "@/constants/config";
+import UserAvatarMenu from "@/components/UserAvatarMenu";
 import React, { useEffect, useRef, useState, useMemo, useCallback } from "react";
 
-const LOGO_URL = { uri: 'https://r2-pub.rork.com/generated-images/84decd64-941d-4043-98e0-2e592fa65179.png' };
-const APP_SECRET = 'sk_trafikskola_prod_acbdca5a99ca581b2528d9da55d5be73';
+const FALLBACK_LOGO = require('@/assets/images/tfx-logo.png');
 
 const WEEKDAY_NAMES_SV = ['Mån', 'Tis', 'Ons', 'Tor', 'Fre', 'Lör', 'Sön'];
 const MONTH_NAMES_SV = [
@@ -729,8 +732,10 @@ const calStyles = StyleSheet.create({
 });
 
 export default function HomeScreen() {
+  const { colors } = useTheme();
   const { config, isConfigured } = useSchool();
   const { isAuthenticated, accessToken } = useAuth();
+  const { isFeatureEnabled, settings: appSettings, updateAvailable } = useAppConfig();
   const router = useRouter();
 
   const weekRange = useMemo(() => {
@@ -795,7 +800,7 @@ export default function HomeScreen() {
       >
         <View style={styles.heroSection}>
           <LinearGradient
-            colors={['#0B2A3C', '#0E3D56', '#0A4F7A']}
+            colors={[colors.primaryDeep, colors.primaryDark, colors.primary]}
             style={StyleSheet.absoluteFill}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
@@ -805,18 +810,14 @@ export default function HomeScreen() {
             <View style={styles.heroInner}>
               <View style={styles.heroTop}>
                 <View style={styles.logoBox}>
-                  <Image source={LOGO_URL} style={styles.logo} contentFit="contain" />
+                  <Image
+                    source={branding.logoUrl ? { uri: branding.logoUrl } : FALLBACK_LOGO}
+                    style={styles.logo}
+                    contentFit="contain"
+                  />
                 </View>
                 <View style={styles.heroTopRight}>
-                  {branding.logoUrl && (
-                    <View style={styles.schoolLogoBox}>
-                      <Image
-                        source={{ uri: branding.logoUrl }}
-                        style={styles.schoolLogo}
-                        contentFit="contain"
-                      />
-                    </View>
-                  )}
+                  <UserAvatarMenu />
                   <StatusIndicator isConfigured={isConfigured} isAuthenticated={isAuthenticated} />
                 </View>
               </View>
@@ -837,25 +838,46 @@ export default function HomeScreen() {
 
           <Text style={styles.sectionTitle}>Snabbval</Text>
 
-          <QuickAction
-            icon={<Calendar size={22} color="#fff" />}
-            label="Boka körlektioner"
-            sublabel="Hitta lediga tider"
-            colors={[TFX.blue, TFX.blueDark]}
-            onPress={() => router.push('/book-lesson')}
-          />
-          <QuickAction
-            icon={<BookOpen size={22} color="#fff" />}
-            label="Teorilektioner"
-            sublabel="Se schema och boka"
-            colors={[TFX.teal, TFX.tealDark]}
-          />
-          <QuickAction
-            icon={<FileText size={22} color="#fff" />}
-            label="Fakturor"
-            sublabel="Se och betala"
-            colors={[TFX.orange, TFX.orangeDark]}
-          />
+          {isFeatureEnabled('featureBookings') && (
+            <QuickAction
+              icon={<Calendar size={22} color="#fff" />}
+              label="Boka körlektioner"
+              sublabel="Hitta lediga tider"
+              colors={[TFX.blue, TFX.blueDark]}
+              onPress={() => router.push('/book-lesson')}
+            />
+          )}
+          {isFeatureEnabled('featureLms') && (
+            <QuickAction
+              icon={<BookOpen size={22} color="#fff" />}
+              label="Studiematerial"
+              sublabel="Läs och gör quiz"
+              colors={[TFX.teal, TFX.tealDark]}
+              onPress={() => router.push('/(tabs)/lms')}
+            />
+          )}
+          {isFeatureEnabled('featureInvoices') && (
+            <QuickAction
+              icon={<FileText size={22} color="#fff" />}
+              label="Fakturor"
+              sublabel="Se och betala"
+              colors={[TFX.orange, TFX.orangeDark]}
+            />
+          )}
+          {isFeatureEnabled('featureKorklar') && (
+            <QuickAction
+              icon={<Car size={22} color="#fff" />}
+              label="Körklar"
+              sublabel="Se din progress"
+              colors={['#7C3AED', '#6D28D9']}
+            />
+          )}
+
+          {updateAvailable && (
+            <View style={styles.updateBanner}>
+              <Text style={styles.updateBannerText}>📲 Ny version tillgänglig — uppdatera appen</Text>
+            </View>
+          )}
         </View>
       </ScrollView>
     </View>
@@ -999,5 +1021,18 @@ const styles = StyleSheet.create({
     fontFamily,
     color: TFX.slate,
     marginTop: 2,
+  },
+  updateBanner: {
+    backgroundColor: '#EFF6FF',
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 8,
+    alignItems: 'center',
+  },
+  updateBannerText: {
+    fontSize: 14,
+    fontWeight: '600' as const,
+    fontFamily,
+    color: TFX.blue,
   },
 });

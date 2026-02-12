@@ -1,0 +1,446 @@
+# TFX Mobile App — Server Requirements
+
+This document lists everything the server needs to fix or implement for the mobile app to work correctly.
+
+---
+
+## 🔴 Persistent Session & Device Certificate (Auto-Login)
+
+The app now implements a **device certificate** system so users only need to log in once. After the first login, the app stores the refresh token in encrypted device storage and uses it to silently re-authenticate on every app open — even days or weeks later.
+
+### How it works (app side — already implemented)
+
+1. User logs in (OTP, password, or QR)
+2. App saves `accessToken`, `refreshToken`, and a **device certificate** (refresh token + user email) in encrypted SecureStore
+3. On next app open, the app checks the stored tokens:
+   - If session was validated within 7 days → trusts stored tokens (instant login)
+   - If stale → calls `POST /auth/refresh` to get a fresh access token
+   - If refresh fails → retries with the device certificate's refresh token
+   - Only forces re-login if **all** recovery paths fail
+4. During API calls, if a 401 is received → same 3-tier recovery before forcing logout
+
+### What the server MUST support
+
+#### 1. Long-lived refresh tokens
+
+**`POST /api/mobile/auth/refresh`**
+
+```json
+{ "refreshToken": "eyJ..." }
+```
+
+**Requirements:**
+- Refresh tokens must be **long-lived** — ideally **90 days or more** (never-expiring is also fine for mobile apps)
+- If the server currently sets refresh token expiry to something short (e.g. 24h or 7 days), **increase it to at least 90 days** for mobile clients
+- Each refresh call should return a **new refresh token** (token rotation) so the certificate stays fresh:
+
+```json
+{
+  "success": true,
+  "data": {
+    "accessToken": "eyJ...(new short-lived access token)...",
+    "refreshToken": "eyJ...(new long-lived refresh token)...",
+    "expiresIn": 3600
+  }
+}
+```
+
+- If the server does NOT return a new `refreshToken` in the response, the app will keep reusing the original one — which means the original refresh token must remain valid for the token's full lifetime
+- Access tokens can stay short-lived (1h recommended) — the app handles refreshing them transparently
+
+#### 2. Refresh tokens must survive server restarts
+
+- Refresh tokens must be **stored server-side** (in database, not just in-memory)
+- They must survive server restarts and deployments
+- Recommended schema:
+
+```sql
+CREATE TABLE refresh_tokens (
+  id UUID PRIMARY KEY,
+  user_id UUID REFERENCES users(id),
+  token_hash VARCHAR(255) UNIQUE NOT NULL,
+  device_id VARCHAR(255),
+  issued_at TIMESTAMP DEFAULT NOW(),
+  expires_at TIMESTAMP NOT NULL,
+  revoked_at TIMESTAMP NULL,
+  last_used_at TIMESTAMP NULL
+);
+```
+
+#### 3. Token rotation (recommended but not required)
+
+For best security, implement **refresh token rotation**:
+- Each time `/auth/refresh` is called, invalidate the old refresh token and issue a new one
+- Return the new refresh token in the response (`data.refreshToken`)
+- If an already-revoked refresh token is used, **revoke ALL tokens for that user** (indicates token theft)
+
+#### 4. Per-device token tracking (recommended)
+
+The app sends `deviceInfo.deviceId` during login. Track which device each refresh token belongs to so:
+- Users can see their active sessions/devices
+- Admins can revoke a specific device
+- Logout only affects the current device, not all sessions
+
+#### 5. Do NOT invalidate refresh tokens on access token refresh
+
+Some server implementations invalidate the refresh token after a single use without returning a new one. **This will break persistent login.** Either:
+- Return a new refresh token on every refresh call, OR
+- Allow the same refresh token to be reused multiple times until it expires
+
+### Current behavior to verify
+
+Test this flow manually:
+1. Login via app → note the refresh token
+2. Wait for access token to expire (or manually delete it)
+3. Call `POST /api/mobile/auth/refresh` with the stored refresh token
+4. Verify you get a new valid access token back
+5. Repeat step 3 a week later — the refresh token should **still work**
+
+If step 5 fails, the refresh token lifetime is too short.
+
+---
+
+## 🔴 Critical Issues
+
+### 1. Logo URL returns HTML instead of image
+
+**Problem:** `https://dev.dintrafikskolahlm.se/logo.png` returns `Content-Type: text/html` instead of an actual PNG image. Same likely applies to `icon.png` and `splash.png`. The app cannot display the school logo.
+
+**Fix:** Ensure these URLs serve actual image files with correct `Content-Type` headers:
+- `logo.png` → `Content-Type: image/png`
+- `icon.png` → `Content-Type: image/png`
+- `splash.png` → `Content-Type: image/png`
+
+This usually means placing the files in your **public/static folder** (e.g. `/public/logo.png` in Next.js), or configuring your web server / CDN to serve them directly rather than routing through your SPA.
+
+---
+
+### 2. QR Code domain typo
+
+**Problem:** Some QR codes generated by the server contain `dev.dintrafikskolahm.se` (missing the **L**). The correct domain is `dev.dintrafikskolahlm.se`.
+
+**Fix:** Verify the QR code generation logic uses the correct domain. The school setup QR should produce:
+```json
+{
+  "type": "school_config",
+  "domain": "dev.dintrafikskolahlm.se",
+  "version": 1
+}
+```
+
+---
+
+### 3. `/api/mobile/config` returns 500
+
+**Current state:** `GET /api/mobile/config?domain=dev.dintrafikskolahlm.se` → **500 Internal Server Error**
+
+**Impact:** The app falls back to reading feature flags from `/api/app-config` instead. This works but is less complete (no version checks, push config, sync settings, etc.).
+
+**Option A — Fix the endpoint.** It should return:
+```json
+{
+  "success": true,
+  "data": {
+    "appEnabled": true,
+    "maintenanceMode": false,
+    "minVersion": { "ios": "1.0.0", "android": "1.0.0" },
+    "latestVersion": { "ios": "1.0.0", "android": "1.0.0" },
+    "features": {
+      "bookings": true,
+      "lms": true,
+      "quiz": false,
+      "certificates": false,
+      "korklar": false,
+      "invoices": true,
+      "profile": true,
+      "offlineMode": false
+    },
+    "branding": {
+      "appName": "Din Trafikskola HLM",
+      "tagline": "Drive with confidence",
+      "iosAppStoreUrl": "",
+      "androidPlayStoreUrl": ""
+    },
+    "push": {
+      "enabled": true,
+      "bookingReminders": true,
+      "lessonAvailable": true,
+      "paymentReminders": true
+    },
+    "sync": {
+      "intervalMinutes": 30,
+      "offlineRetentionDays": 30,
+      "maxOfflineBookings": 50
+    }
+  }
+}
+```
+
+**Option B — Ignore it.** The app now gracefully falls back to `/api/app-config` features. But you lose version forcing, push config, and sync tuning.
+
+---
+
+## 🟡 Feature Flag Mapping
+
+The app reads feature flags from two sources. Make sure at least one is correct:
+
+### Source 1: `/api/app-config` → `data.features` (currently used)
+**Current server response:**
+```json
+{
+  "features": {
+    "enableQuiz": false,
+    "enableLessons": true,
+    "enableCertificates": false,
+    "enableKorklar": false
+  }
+}
+```
+
+**Missing from `features` object:** `enableBookings`, `enableInvoices`, `enableProfile`, `enableLms`. The app currently infers these from the top-level `enabledFeatures` array instead.
+
+### Source 2: `/api/app-config` → `enabledFeatures` array (currently used as fallback)
+**Current server response:**
+```json
+{
+  "enabledFeatures": ["bookings", "invoices", "lms", "profile"]
+}
+```
+
+**Recommendation:** For consistency, populate the `features` object with ALL flags:
+```json
+{
+  "features": {
+    "enableBookings": true,
+    "enableLms": true,
+    "enableLessons": true,
+    "enableQuiz": false,
+    "enableCertificates": false,
+    "enableKorklar": false,
+    "enableInvoices": true,
+    "enableProfile": true,
+    "enableOfflineMode": false
+  }
+}
+```
+
+### Mapping table
+
+| Server field (features object) | Server field (enabledFeatures array) | App feature | Controls |
+|------|------|------|------|
+| `enableBookings` | `"bookings"` | `featureBookings` | Bookings tab + quick action |
+| `enableLms` or `enableLessons` | `"lms"` | `featureLms` | LMS tab + quick action |
+| `enableQuiz` | `"quiz"` | `featureQuiz` | Quiz functionality |
+| `enableCertificates` | `"certificates"` | `featureCertificates` | Certificates |
+| `enableKorklar` | `"korklar"` | `featureKorklar` | Körklar tab + quick action |
+| `enableInvoices` | `"invoices"` | `featureInvoices` | Invoices tab + quick action |
+| `enableProfile` | `"profile"` | `featureProfile` | Profile tab |
+| `enableOfflineMode` | `"offlineMode"` | `featureOfflineMode` | Offline sync |
+
+---
+
+## 🟡 Quick Login QR Code
+
+### Current behavior
+The server generates session login QR codes with `"type": "session_login"`:
+```json
+{
+  "type": "session_login",
+  "token": "sqr_9cc68b962854d67303c804aad5389506...",
+  "userId": "eb511794-80e9-4d52-8d05-98ee00071e5c",
+  "domain": "dev.dintrafikskolahlm.se",
+  "version": 1
+}
+```
+
+**This now works** — the app accepts both `"session_login"` and `"quick_login"` types.
+
+### Server endpoint required
+The app sends a POST to authenticate with the QR token:
+
+**`POST /api/mobile/auth/quick-login`**
+```json
+{ "token": "sqr_9cc68b962854d67..." }
+```
+
+**Expected response:**
+```json
+{
+  "success": true,
+  "data": {
+    "accessToken": "eyJ...",
+    "refreshToken": "eyJ...",
+    "expiresIn": 3600,
+    "user": {
+      "id": "eb511794-...",
+      "email": "student@example.com",
+      "firstName": "Anna",
+      "lastName": "Svensson"
+    }
+  }
+}
+```
+
+---
+
+## 🟢 Student Profile Endpoints
+
+These endpoints are called by the user avatar menu on the home screen. The profile endpoint already exists (returns 401 without auth), but verify the response format matches.
+
+### `GET /api/mobile/student/profile`
+
+**Headers:** `Authorization: Bearer <token>`, `X-App-Secret: sk_trafikskola_prod_...`
+
+**Expected response:**
+```json
+{
+  "success": true,
+  "data": {
+    "id": "usr_123",
+    "email": "anna@example.com",
+    "firstName": "Anna",
+    "lastName": "Svensson",
+    "phone": "+46701234567",
+    "address": "Storgatan 1, Stockholm",
+    "profileImageUrl": "https://cdn.example.com/avatars/usr_123.jpg",
+    "personalNumber": "19950101-1234",
+    "enrolledAt": "2025-09-01T00:00:00Z",
+    "licenseType": "B",
+    "instructor": { "id": "instr_1", "name": "Erik Johansson" },
+    "progress": {
+      "lessonsCompleted": 12,
+      "totalLessons": 20,
+      "examStatus": "not_booked"
+    }
+  }
+}
+```
+
+**Key:** `profileImageUrl` must be a **real image URL** (not HTML). Set to `null` if no avatar.
+
+---
+
+### `PUT /api/mobile/student/profile`
+
+Updates editable profile fields.
+
+**Request body:**
+```json
+{
+  "firstName": "Anna",
+  "lastName": "Svensson",
+  "phone": "+46701234567"
+}
+```
+
+**Response:** `{ "success": true }`
+
+Changes should also reflect on the website/admin dashboard.
+
+---
+
+### `POST /api/mobile/student/avatar`
+
+Uploads a new profile image. **Uses `multipart/form-data`**, not JSON.
+
+**Request:**
+- Content-Type: `multipart/form-data`
+- Form field name: `avatar`
+- File types: JPEG or PNG
+- Recommended max size: 5MB
+
+**Example with curl:**
+```bash
+curl -X POST https://dev.dintrafikskolahlm.se/api/mobile/student/avatar \
+  -H "Authorization: Bearer <token>" \
+  -H "X-App-Secret: sk_trafikskola_prod_..." \
+  -F "avatar=@photo.jpg"
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "avatarUrl": "https://cdn.example.com/avatars/usr_123_1708000000.jpg"
+  }
+}
+```
+
+**Server must:**
+1. Accept `multipart/form-data` with field name `avatar`
+2. Resize/optimize the image (recommended: 512×512 max)
+3. Store in CDN/uploads directory
+4. Update user's `profileImageUrl` in database
+5. **Also set as the website avatar** (shared across web + mobile)
+6. Return the new public URL with correct `Content-Type: image/jpeg` or `image/png`
+
+**Express.js example with multer:**
+```javascript
+const multer = require('multer');
+const upload = multer({
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (['image/jpeg', 'image/png'].includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only JPEG and PNG allowed'));
+    }
+  },
+});
+
+router.post('/student/avatar',
+  authenticate,
+  upload.single('avatar'),
+  async (req, res) => {
+    const avatarUrl = await saveAndResizeImage(req.file);
+    await db.user.update({
+      where: { id: req.user.id },
+      data: { profileImageUrl: avatarUrl },
+    });
+    res.json({ success: true, data: { avatarUrl } });
+  }
+);
+```
+
+---
+
+### `DELETE /api/mobile/student/avatar`
+
+Removes the user's avatar.
+
+**Response:** `{ "success": true }`
+
+**Server must:** Delete the image file and set `profileImageUrl` to `null`.
+
+---
+
+## 🟢 Translations Endpoint (Optional)
+
+The app tries to fetch translations but gets 404:
+```
+[i18n] Failed to fetch server translations, using fallback: Error: Failed to fetch translations: 404
+```
+
+**Endpoint:** `GET /api/mobile/i18n?locale=sv&version=1.0.0`
+
+This is optional — the app falls back to built-in Swedish translations. Implement only if you want server-managed translations.
+
+---
+
+## Summary Checklist
+
+| # | Issue | Priority | Status |
+|---|-------|----------|--------|
+| 0 | Refresh tokens must be long-lived (≥90 days) | 🔴 Critical | **Verify / Fix** |
+| 1 | Logo/icon/splash URLs serve HTML not images | 🔴 Critical | Broken |
+| 2 | QR code domain typo (hm vs hlm) | 🔴 Critical | Check QR generator |
+| 3 | `/api/mobile/config` returns 500 | 🟡 Medium | App falls back OK |
+| 4 | Feature flags incomplete in `features` object | 🟡 Medium | `enabledFeatures` array covers it |
+| 5 | Quick login QR type mismatch | 🟢 Fixed | App now accepts both types |
+| 6 | Student profile GET/PUT | 🟢 Verify | Endpoint exists, verify format |
+| 7 | Avatar upload POST | 🟡 Implement | Needs multipart/form-data handler |
+| 8 | Avatar delete DELETE | 🟡 Implement | Simple endpoint |
+| 9 | Translations 404 | ⚪ Optional | App uses fallback |
+| 10 | Refresh token rotation (return new refresh token) | 🟡 Recommended | Improves security + session longevity |
+| 11 | Per-device token tracking | 🟡 Recommended | Enables device management |
