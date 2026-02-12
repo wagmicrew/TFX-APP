@@ -765,7 +765,13 @@ export default function HomeScreen() {
           console.log('[Dashboard] Bookings fetch failed:', response.status);
           return [];
         }
-        const data = await response.json();
+        // Guard: check for HTML responses from server
+        const bodyText = await response.text();
+        if (bodyText.trimStart().startsWith('<')) {
+          console.warn('[Dashboard] Server returned HTML instead of JSON for bookings');
+          return [];
+        }
+        const data = JSON.parse(bodyText);
         console.log('[Dashboard] Bookings response:', JSON.stringify(data).substring(0, 200));
         if (data.success && data.data?.bookings) {
           return data.data.bookings as Booking[];

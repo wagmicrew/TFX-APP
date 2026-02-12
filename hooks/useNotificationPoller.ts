@@ -24,6 +24,8 @@ import {
 } from '@/services/mobile-api';
 
 const POLL_INTERVAL_MS = 30_000; // 30 seconds
+const MAX_CONSECUTIVE_FAILURES = 5;
+const MAX_BACKOFF_MS = 5 * 60_000; // 5 minutes
 
 export interface NotificationPollerState {
   /** Total unread notification count for this user */
@@ -50,6 +52,7 @@ export function useNotificationPoller(): NotificationPollerState {
   const lastFetchRef = useRef<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isMountedRef = useRef(true);
+  const consecutiveFailuresRef = useRef(0);
 
   const apiBaseUrl = config?.apiBaseUrl;
 
@@ -110,6 +113,9 @@ export function useNotificationPoller(): NotificationPollerState {
         return;
       }
 
+      // Reset failure counter on success
+      consecutiveFailuresRef.current = 0;
+
       // ── Update state ───────────────────────────────────────────────────
       setUnreadCount(serverUnread);
 
@@ -119,8 +125,13 @@ export function useNotificationPoller(): NotificationPollerState {
         queryClient.invalidateQueries({ queryKey: ['notifications'] });
       }
     } catch (err) {
-      // Network errors are non-fatal — we'll retry on next interval
-      console.warn('[NotifPoller] Poll error:', err);
+      consecutiveFailuresRef.current++;
+      // Only log first few failures to avoid log spam
+      if (consecutiveFailuresRef.current <= 3) {
+        console.warn(`[NotifPoller] Poll error (${consecutiveFailuresRef.current}/${MAX_CONSECUTIVE_FAILURES}):`, err);
+      } else if (consecutiveFailuresRef.current === MAX_CONSECUTIVE_FAILURES) {
+        console.warn('[NotifPoller] Too many consecutive failures, backing off');
+      }
     }
   }, [apiBaseUrl, accessToken, isAuthenticated, logout, queryClient]);
 
@@ -161,10 +172,27 @@ export function useNotificationPoller(): NotificationPollerState {
 
     // Initial poll
     setIsPolling(true);
+    consecutiveFailuresRef.current = 0;
     poll();
 
-    // Interval polling
-    intervalRef.current = setInterval(poll, POLL_INTERVAL_MS);
+    // Adaptive polling: back off on consecutive failures
+    const adaptivePoll = () => {
+      const failures = consecutiveFailuresRef.current;
+      if (failures >= MAX_CONSECUTIVE_FAILURES) {
+        // Switch to longer backoff interval
+        const backoff = Math.min(POLL_INTERVAL_MS * Math.pow(2, failures - MAX_CONSECUTIVE_FAILURES + 1), MAX_BACKOFF_MS);
+        intervalRef.current = setTimeout(() => {
+          poll();
+          intervalRef.current = setTimeout(adaptivePoll, 0);
+        }, backoff) as unknown as ReturnType<typeof setInterval>;
+        return;
+      }
+      intervalRef.current = setTimeout(() => {
+        poll();
+        adaptivePoll();
+      }, POLL_INTERVAL_MS) as unknown as ReturnType<typeof setInterval>;
+    };
+    intervalRef.current = setTimeout(adaptivePoll, POLL_INTERVAL_MS) as unknown as ReturnType<typeof setInterval>;
 
     // Re-poll on app resume
     const appStateHandler = (nextState: AppStateStatus) => {

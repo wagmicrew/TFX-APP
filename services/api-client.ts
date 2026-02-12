@@ -305,6 +305,31 @@ export async function apiClient<T = unknown>(options: ApiClientOptions): Promise
       if (response.status === 204) {
         return {} as T;
       }
+
+      // Guard against HTML responses (e.g. server returning a Next.js error page)
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        const bodyPreview = await response.text();
+        if (bodyPreview.trimStart().startsWith('<')) {
+          console.warn('[ApiClient] Server returned HTML instead of JSON for:', url);
+          throw new ApiError(
+            response.status,
+            `Server returned HTML instead of JSON (status ${response.status}). The endpoint may not exist or the server is misconfigured.`,
+            'HTML_RESPONSE',
+          );
+        }
+        // Try to parse as JSON anyway (some servers omit content-type)
+        try {
+          return JSON.parse(bodyPreview) as T;
+        } catch {
+          throw new ApiError(
+            response.status,
+            `Unexpected response format (status ${response.status}): ${bodyPreview.substring(0, 200)}`,
+            'INVALID_RESPONSE',
+          );
+        }
+      }
+
       return response.json();
     }
 
@@ -320,16 +345,18 @@ async function handleErrorResponse(response: Response): Promise<never> {
   let errorCode: string | undefined;
 
   try {
-    const data = await response.json();
-    errorMessage = data.error || data.message || errorMessage;
-    errorCode = data.errorCode;
-  } catch {
-    // Response body is not JSON
-    try {
-      errorMessage = await response.text();
-    } catch {
-      // Keep default message
+    const bodyText = await response.text();
+    // Detect HTML error pages (Next.js 404/500 etc.)
+    if (bodyText.trimStart().startsWith('<')) {
+      errorMessage = `Server returned HTML error page (HTTP ${response.status}). The endpoint may not exist.`;
+      errorCode = 'HTML_ERROR_RESPONSE';
+    } else {
+      const data = JSON.parse(bodyText);
+      errorMessage = data.error || data.message || errorMessage;
+      errorCode = data.errorCode;
     }
+  } catch {
+    // Could not parse — keep default HTTP status message
   }
 
   throw new ApiError(response.status, errorMessage, errorCode);

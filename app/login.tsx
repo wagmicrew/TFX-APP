@@ -146,8 +146,9 @@ export default function LoginScreen() {
         // Explicit redirect — don't rely solely on the isAuthenticated effect
         router.replace('/(tabs)');
       },
-      onError: () => {
-        setTimeout(() => setScanned(false), 1000);
+      onError: (err: Error) => {
+        console.error('[Login] Quick login failed:', err.message);
+        setTimeout(() => setScanned(false), 2000);
       },
     });
   };

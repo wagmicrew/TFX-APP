@@ -19,6 +19,7 @@ import {
   CheckCircle,
   BarChart3,
   FileQuestion,
+  Zap,
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
@@ -343,6 +344,37 @@ export default function LmsScreen() {
             </TouchableOpacity>
           </View>
         )}
+
+        {/* Practice Quiz Card */}
+        <View style={styles.section}>
+          <TouchableOpacity
+            style={styles.practiceCard}
+            activeOpacity={0.85}
+            onPress={() => router.push('/lms/practice-quiz')}
+          >
+            <LinearGradient
+              colors={[TFX.teal, TFX.tealDark]}
+              style={styles.practiceGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              <View style={styles.practiceContent}>
+                <View style={styles.practiceIconBox}>
+                  <Zap size={24} color={TFX.white} />
+                </View>
+                <View style={styles.practiceText}>
+                  <Text style={styles.practiceTitle}>
+                    {t('practiceQuiz.title', 'Övningsprov')}
+                  </Text>
+                  <Text style={styles.practiceDesc}>
+                    {t('practiceQuiz.cardDesc', 'Öva med slumpmässiga teorifrågor')}
+                  </Text>
+                </View>
+                <ChevronRight size={20} color="rgba(255,255,255,0.7)" />
+              </View>
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
 
         {/* Courses list */}
         <View style={styles.section}>
@@ -673,5 +705,46 @@ const styles = StyleSheet.create({
     color: TFX.slate,
     textAlign: 'center',
     lineHeight: 20,
+  },
+  practiceCard: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  practiceGradient: {
+    borderRadius: 16,
+    padding: 18,
+  },
+  practiceContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  practiceIconBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  practiceText: {
+    flex: 1,
+  },
+  practiceTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    fontFamily,
+    color: TFX.white,
+    marginBottom: 2,
+  },
+  practiceDesc: {
+    fontSize: 13,
+    fontFamily,
+    color: 'rgba(255,255,255,0.75)',
   },
 });

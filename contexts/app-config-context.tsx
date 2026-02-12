@@ -80,7 +80,7 @@ function buildSettingsFromSchoolFeatures(features?: SchoolFeatures, enabledFeatu
 
     featureBookings: features?.enableBookings ?? features?.bookings ?? fromArray('bookings') ?? true,
     featureLms: features?.enableLms ?? features?.enableLessons ?? features?.lms ?? fromArray('lms') ?? true,
-    featureQuiz: features?.enableQuiz ?? features?.quiz ?? fromArray('quiz') ?? false,
+    featureQuiz: features?.enableQuiz ?? features?.quiz ?? fromArray('quiz') ?? fromArray('lms') ?? true,
     featureCertificates: features?.enableCertificates ?? features?.certificates ?? fromArray('certificates') ?? false,
     featureKorklar: features?.enableKorklar ?? features?.korklar ?? fromArray('korklar') ?? false,
     featureInvoices: features?.enableInvoices ?? features?.invoices ?? fromArray('invoices') ?? true,

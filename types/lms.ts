@@ -161,3 +161,19 @@ export interface QuizResultResponse {
   data?: QuizResult;
   error?: string;
 }
+
+/** Practice quiz category */
+export interface PracticeCategory {
+  id: string;
+  name: string;
+  questionCount: number;
+}
+
+export interface PracticeCategoriesResponse {
+  success: boolean;
+  data?: {
+    categories: PracticeCategory[];
+    totalQuestions: number;
+  };
+  error?: string;
+}

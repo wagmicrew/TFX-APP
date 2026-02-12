@@ -268,13 +268,28 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         throw new Error('Invalid QR code');
       }
 
-      const response = await fetch(`${config.apiBaseUrl}/auth/quick-login`, {
+      const url = `${config.apiBaseUrl}/auth/quick-login`;
+      console.log('[Auth] Quick login URL:', url);
+      const response = await fetch(url, {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify({ token: parsed.token }),
       });
 
-      const data: AuthTokenResponse = await response.json();
+      // Guard against HTML responses (server returning error page)
+      const bodyText = await response.text();
+      if (bodyText.trimStart().startsWith('<')) {
+        console.error('[Auth] Quick login: server returned HTML instead of JSON (HTTP', response.status, ')');
+        throw new Error('Servern svarade inte korrekt. Kontrollera att servern är igång.');
+      }
+
+      let data: AuthTokenResponse;
+      try {
+        data = JSON.parse(bodyText);
+      } catch {
+        console.error('[Auth] Quick login: invalid JSON response:', bodyText.substring(0, 200));
+        throw new Error('Quick login failed: invalid server response');
+      }
 
       if (!response.ok || !data.success || !data.data) {
         throw new Error(data.error || 'Quick login failed');

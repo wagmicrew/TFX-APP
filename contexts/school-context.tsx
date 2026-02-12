@@ -37,7 +37,22 @@ async function fetchSchoolConfig(domain: string): Promise<SchoolConfig> {
     config.enabledFeatures = data.enabledFeatures;
   }
 
-  console.log('[SchoolContext] Config received — logoUrl:', config.branding?.logoUrl || '(none)', 'theme.primary:', config.theme?.primaryColor || '(none)', 'enabledFeatures:', data.enabledFeatures || '(none)');
+  // Normalize apiBaseUrl — ensure it ends with /api/mobile
+  // Some server versions return /api without /mobile, which breaks all API calls
+  if (config.apiBaseUrl) {
+    const url = config.apiBaseUrl.replace(/\/+$/, ''); // strip trailing slashes
+    if (url.endsWith('/api')) {
+      config.apiBaseUrl = `${url}/mobile`;
+    } else if (!url.endsWith('/api/mobile')) {
+      // If it's just the domain (e.g. https://dev.example.com), append /api/mobile
+      config.apiBaseUrl = `${url}/api/mobile`;
+    }
+  } else {
+    // Fallback: construct from domain
+    config.apiBaseUrl = `https://${cleanDomain}/api/mobile`;
+  }
+
+  console.log('[SchoolContext] Config received — apiBaseUrl:', config.apiBaseUrl, 'logoUrl:', config.branding?.logoUrl || '(none)', 'theme.primary:', config.theme?.primaryColor || '(none)', 'enabledFeatures:', data.enabledFeatures || '(none)');
 
   return config;
 }
